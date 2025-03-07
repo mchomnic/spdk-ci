@@ -29,6 +29,7 @@ jobs:
 
     - name: Install dependencies
       run: |
+        ls -la
         cd spdk
         sudo ./scripts/pkgdep.sh
         sudo ./test/common/config/autotest_setup.sh --install-deps --test-conf="fio,flamegraph,nvmecli,lcov"
