@@ -30,8 +30,8 @@ jobs:
     - name: Install dependencies
       run: |
         cd spdk
-        ./scripts/pkgdep.sh
-        ./test/common/config/autotest_setup.sh --install-deps --test-conf="fio,flamegraph,nvmecli,lcov"
+        sudo ./scripts/pkgdep.sh
+        sudo ./test/common/config/autotest_setup.sh --install-deps --test-conf="fio,flamegraph,nvmecli,lcov"
         ./configure --with-rdma
         make -j$(nproc)
 
