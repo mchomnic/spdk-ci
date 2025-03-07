@@ -3,12 +3,18 @@ name: spdk-nvda-nvmf
 
 on:
   workflow_dispatch:
+    inputs:
+      gerrit_ref:
+        description: 'Gerrit refspec to test following refs/changes/XX/YYYYY/Z format'
+        required: false
+        type: string
+        default: ''
 
 jobs:
-  spdk-nvmf:
+  prepare-env:
     runs-on: [self-hosted, nvda, mlx]
     env:
-      gerrit_ref: ${{ inputs.gerrit_ref }}
+      gerrit_ref: ${{ github.event.inputs.gerrit_ref }}
       spdk_path: './spdk'
 
     steps:
@@ -26,3 +32,12 @@ jobs:
         cd spdk
         sudo ./scripts/pkgdep.sh
         sudo ./test/common/config/autotest_setup.sh --install-deps --test-conf="fio,flamegraph,nvmecli,lcov"
+
+  run-unittests:
+    needs: prepare-env
+    runs-on: [self-hosted, nvda, mlx]
+    steps:
+    - name: Run unit tests
+      run: |
+        cd spdk
+        ./test/unit/unittest.sh
