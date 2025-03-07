@@ -8,7 +8,7 @@ on:
         description: 'Gerrit refspec to test following refs/changes/XX/YYYYY/Z format'
         required: false
         type: string
-        default: 'refs/changes/76/25676/1'  # MLX VFs
+        default: 'refs/changes/76/25676/2'  # MLX VFs
 
 jobs:
   prepare-env:
