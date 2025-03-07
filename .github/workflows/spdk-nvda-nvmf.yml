@@ -43,3 +43,11 @@ jobs:
       run: |
         cd spdk
         ./test/unit/unittest.sh
+
+  run-nvmf-tests:
+    needs: prepare-env
+    runs-on: [self-hosted, nvda, mlx]
+    steps:
+    - name: Run NVMF tests
+      run: |
+        ./test/nvmf/target/nvmf_lvs_grow.sh --transport=rmda
