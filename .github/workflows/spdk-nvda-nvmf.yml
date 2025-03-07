@@ -8,7 +8,7 @@ on:
         description: 'Gerrit refspec to test following refs/changes/XX/YYYYY/Z format'
         required: false
         type: string
-        default: ''
+        default: 'refs/changes/76/25676/1'  # MLX VFs
 
 jobs:
   prepare-env:
@@ -30,8 +30,8 @@ jobs:
     - name: Install dependencies
       run: |
         cd spdk
-        sudo ./scripts/pkgdep.sh
-        sudo ./test/common/config/autotest_setup.sh --install-deps --test-conf="fio,flamegraph,nvmecli,lcov"
+        ./scripts/pkgdep.sh
+        ./test/common/config/autotest_setup.sh --install-deps --test-conf="fio,flamegraph,nvmecli,lcov"
         ./configure --with-rdma
         make -j$(nproc)
 
@@ -45,9 +45,10 @@ jobs:
         ./test/unit/unittest.sh
 
   run-nvmf-tests:
-    needs: prepare-env
+    needs: run-unittests
     runs-on: [self-hosted, nvda, mlx]
     steps:
     - name: Run NVMF tests
       run: |
+        cd spdk
         ./test/nvmf/target/nvmf_lvs_grow.sh --transport=rmda
