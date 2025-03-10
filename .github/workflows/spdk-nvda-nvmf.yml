@@ -51,5 +51,6 @@ jobs:
     steps:
     - name: Run NVMF tests
       run: |
+        echo 'SPDK_RUN_FUNCTIONAL_TEST=1\nSPDK_TEST_NVMF=1\nSPDK_TEST_NVMF_TRANSPORT=${TRANSPORT}' > autorun.cfg
         cd spdk
-        ./test/nvmf/target/nvmf_lvs_grow.sh --transport=rmda
+        sh "./autotest.sh ../autorun.cfg"
