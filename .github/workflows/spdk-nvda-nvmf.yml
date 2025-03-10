@@ -1,4 +1,5 @@
 ---
+
 name: spdk-nvda-nvmf
 
 on:
@@ -8,11 +9,39 @@ on:
         description: 'Gerrit refspec to test following refs/changes/XX/YYYYY/Z format'
         required: false
         type: string
-        default: 'refs/changes/76/25676/2'  # MLX VFs
+        default: 'refs/changes/82/25682/2'  # MLX VFs + SPDK_TEST_RDMA_PROV
 
 jobs:
-  prepare-env:
-    runs-on: [self-hosted, nvda, mlx]
+  # There is the issue with downloding artifacts in next jobs
+  # the step hangs and never finishes
+  # https://github.com/actions/runner/issues/2166
+  # checkout-spdk:
+  #   runs-on: ubuntu-latest
+  #   env:
+  #     gerrit_ref: ${{ github.event.inputs.gerrit_ref }}
+  #     spdk_path: './spdk'
+
+  #   steps:
+  #   - name: Checkout repository
+  #     uses: actions/checkout@v4
+
+  #   - name: Checkout SPDK repo from Gerrit
+  #     uses: ./.github/actions/checkout_gerrit
+  #     with:
+  #       gerrit_ref: ${{ env.gerrit_ref }}
+  #       spdk_path: ${{ env.spdk_path }}
+
+  #   - name: Create repository tarball
+  #     run: tar -C ${{ env.spdk_path }} -czf spdk.tar.gz .
+
+  #   - name: Upload the repository tarball
+  #     uses: actions/upload-artifact@v4.4.0
+  #     with:
+  #       name: spdk
+  #       path: spdk.tar.gz
+
+  unittest-verbs:
+    runs-on: ubuntu-latest
     env:
       gerrit_ref: ${{ github.event.inputs.gerrit_ref }}
       spdk_path: './spdk'
@@ -27,29 +56,56 @@ jobs:
         gerrit_ref: ${{ env.gerrit_ref }}
         spdk_path: ${{ env.spdk_path }}
 
-    - name: Install dependencies
+    - name: Run tests
       run: |
-        ls -la
-        cd spdk
-        sudo ./scripts/pkgdep.sh
-        sudo ./test/common/config/autotest_setup.sh --install-deps --test-conf="fio,flamegraph,nvmecli,lcov"
-        ./configure --with-rdma
-        make -j$(nproc)
+        printf "%s\n" "SPDK_TEST_UNITTEST=1\nSPDK_TEST_NVMF=1" > autorun.cfg
+        mkdir output
+        cd ${{ env.spdk_path }}
+        ./autorun.sh ../autorun.cfg 2>&1 | tee ../output/build.log
 
-  run-unittests:
-    needs: prepare-env
-    runs-on: [self-hosted, nvda, mlx]
-    steps:
-    - name: Run unit tests
-      run: |
-        cd spdk
-        ./test/unit/unittest.sh
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4.4.0
+      with:
+        name: unittest-verbs-artifacts
+        path: output
 
-  run-nvmf-tests:
-    needs: run-unittests
+  autotest-nvmf-phy:
+    needs: [unittest-verbs]
     runs-on: [self-hosted, nvda, mlx]
+    strategy:
+      matrix:
+        include:
+        - name: "autotest-nvmf-phy-tcp"
+          test_mask: "SPDK_TEST_NVMF=1\nSPDK_TEST_NVMF_TRANSPORT=tcp"
+        - name: "autotest-nvmf-phy-rdma-verbs"
+          test_mask: "SPDK_TEST_NVMF=1\nSPDK_TEST_NVMF_TRANSPORT=rdma\nSPDK_TEST_RDMA_PROV=verbs"
+        - name: "autotest-nvmf-phy-rdma-mlx5"
+          test_mask: "SPDK_TEST_NVMF=1\nSPDK_TEST_NVMF_TRANSPORT=rdma\nSPDK_TEST_RDMA_PROV=mlx5_dv"
+    env:
+      gerrit_ref: ${{ github.event.inputs.gerrit_ref }}
+      spdk_path: './spdk'
+
+    name: ${{ matrix.name }}
+
     steps:
-    - name: Run NVMF tests
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Checkout SPDK repo from Gerrit
+      uses: ./.github/actions/checkout_gerrit
+      with:
+        gerrit_ref: ${{ env.gerrit_ref }}
+        spdk_path: ${{ env.spdk_path }}
+
+    - name: Run tests
       run: |
-        cd spdk
-        ./test/nvmf/target/nvmf_lvs_grow.sh --transport=rmda
+        printf "%s\n" "${{ matrix.test_mask }}" > autorun.cfg
+        mkdir -p ./output
+        cd ${{ env.spdk_path }}
+        ./autorun.sh ../autorun.cfg 2>&1 | tee ../output/build.log
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4.4.0
+      with:
+        name: ${{ matrix.name }}-artifacts
+        path: output
