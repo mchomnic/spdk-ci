@@ -32,6 +32,12 @@ steps:
     src: "{{ local.env.REPOSITORY_TARBALL_PATH }}"
     dst: /tmp/repository.tar.gz
 
+- name: abi_transfer
+  uses: core.put
+  with:
+    src: "{{ local.env.ABI_TARBALL_PATH }}"
+    dst: /tmp/abi.tar.gz
+
 - name: ci_configs_transfer
   uses: core.put
   with:
@@ -42,17 +48,50 @@ steps:
   run: |
     mkdir -p /opt/spdk
     tar xzf /tmp/repository.tar.gz -C /opt/spdk
-    git config --global --add safe.directory /opt/spdk
+    mkdir -p /opt/spdk-abi
+    tar xzf /tmp/abi.tar.gz -C /opt/spdk-abi
+    git config --global --add safe.directory '*'
 
-- name: autorun_unittest
+- name: raid-vg-autotest
+  run: |
+    mkdir -p /opt/output/raid-vg-autotest
+    output_dir=/opt/output/raid-vg-autotest /opt/spdk/autorun.sh /opt/configs/raid-vg-autotest.conf
+
+- name: output_create
   run: |
     mkdir -p /opt/output
-    output_dir=/opt/output /opt/spdk/autorun.sh /opt/configs/unittest.conf
 
 - name: autorun_nvme
   run: |
-    mkdir -p /opt/output
-    output_dir=/opt/output /opt/spdk/autorun.sh /opt/configs/nvme.conf
+    /opt/spdk/autorun.sh /opt/configs/nvme.conf
+
+- name: unittest-gcc-container-autotest
+  run: |
+    rootdir=/opt/spdk && cd $rootdir && source ./test/common/autobuild_common.sh /opt/configs/unittest-gcc-container-autotest.conf && ocf_precompile && unittest_build && ./test/unit/unittest.sh
+
+- name: check-format-container-autotest
+  run: |
+    rootdir=/opt/spdk && cd $rootdir && source ./test/common/autobuild_common.sh /opt/configs/check-format-container-autotest.conf && check_format
+
+- name: release-build-gcc-container-autotest
+  run: |
+    rootdir=/opt/spdk && cd $rootdir && source ./test/common/autobuild_common.sh /opt/configs/release-build-gcc-container-autotest.conf && build_release
+
+- name: doc-container-autotest
+  run: |
+    rootdir=/opt/spdk && cd $rootdir && source ./test/common/autobuild_common.sh /opt/configs/empty.conf && build_doc
+
+- name: build-files-container-autotest
+  run: |
+    rootdir=/opt/spdk && cd $rootdir && source ./test/common/autobuild_common.sh /opt/configs/empty.conf && build_files && dpdk_pci_api
+
+- name: scan-build-container-autotest
+  run: |
+    rootdir=/opt/spdk && cd $rootdir && source ./test/common/autobuild_common.sh /opt/configs/scan-build-container-autotest.conf && ocf_precompile && scanbuild_make
+
+- name: check-so-deps-container-autotest
+  run: |
+    rootdir=/opt/spdk && cd $rootdir && source ./test/common/autobuild_common.sh /opt/configs/check-so-deps-container-autotest.conf && ocf_precompile && SPDK_ABI_DIR=/opt/spdk-abi check_so_deps
 
 - name: output_listing
   run: |
