@@ -26,15 +26,23 @@ jobs:
   autorun:
     needs: get_qcow
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 60
     env:
       REPOSITORY_TARBALL_PATH: ${{ github.workspace }}/repository.tar.gz
+      ABI_TARBALL_PATH: ${{ github.workspace }}/abi.tar.gz
       CI_CFGS_REPOSITORY_PATH: ${{ github.workspace }}/ci/cijoe/configs/autorun_configs
     strategy:
       matrix:
         workflow:
-        - autorun_unittest
         - autorun_nvme
+        - raid-vg-autotest
+        - unittest-gcc-container-autotest
+        - check-format-container-autotest
+        - release-build-gcc-container-autotest
+        - doc-container-autotest
+        - build-files-container-autotest
+        - scan-build-container-autotest
+        - check-so-deps-container-autotest
     container:
       image: ghcr.io/refenv/cijoe-docker:v0.9.50
       options: --device=/dev/kvm
@@ -54,12 +62,27 @@ jobs:
       with:
         name: repository
 
+    - name: Download the SPDK ABI repository
+      uses: actions/download-artifact@v4.1.8
+      with:
+        name: abi
+
     - name: Extract the SPDK repository
       run: |
         tar xzf repository.tar.gz --strip 1
+        tar xzf abi.tar.gz --strip 1
+
+    - name: Restore qcow2 image from cache
+      id: restore-qcow2
+      uses: actions/cache/restore@v4
+      with:
+        path: |
+          fedora_40_x86_64.qcow2
+        key: fedora_40_x86_64
 
     - name: Download VM Qcow2 image artifact
       uses: actions/download-artifact@v4.1.8
+      if: ${{ hashFiles('fedora_40_x86_64.qcow2') == '' }}
       with:
         name: qcow2-build-artifacts
         github-token: ${{ github.token }}
@@ -68,7 +91,7 @@ jobs:
     - name: qemu-guest, provision
       run: |
         cd ci/cijoe
-        cijoe guest_initialize guest_start guest_check tgz_transfer ci_configs_transfer tgz_unpack \
+        cijoe guest_initialize guest_start guest_check tgz_transfer abi_transfer ci_configs_transfer tgz_unpack output_create \
         --monitor \
         --config configs/qemuhost-with-guest-fedora-40.toml \
         --workflow workflows/autorun_in_qemu.yaml \
