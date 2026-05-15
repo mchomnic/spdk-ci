@@ -1,5 +1,5 @@
 ---
-name: nvidia-nvmf-rdma-test
+name: nvidia-nvmf-tcp-test
 
 on:
   workflow_dispatch:
@@ -17,7 +17,7 @@ on:
         default: ''
 
 jobs:
-  nvidia-nvmf-rdma:
+  nvidia-nvmf-tcp:
     runs-on: [nvidia-ubuntu-nvmf]
     timeout-minutes: 60
     env:
@@ -37,11 +37,15 @@ jobs:
         cat > funtest.conf << EOF
         SPDK_RUN_FUNCTIONAL_TEST=1
         SPDK_TEST_NVMF=1
-        SPDK_TEST_NVMF_TRANSPORT="rdma"
-        SPDK_TEST_NVMF_NICS=mlx5
-        NET_TYPE=phy
-        SPDK_RUN_ASAN=0
+        SPDK_TEST_NVME_CLI=1
+        SPDK_TEST_NVMF_TRANSPORT=tcp
+        SPDK_TEST_URING=0
+        SPDK_TEST_VFIOUSER=1
+        SPDK_TEST_USDT=1
+        SPDK_TEST_NVMF_MDNS=1
         SPDK_RUN_UBSAN=1
+        SPDK_RUN_ASAN=1
+        NET_TYPE=virt
         AUTOTEST_COLORS_ENABLED=no
         EOF
         ./spdk/autorun.sh ./funtest.conf
@@ -50,4 +54,4 @@ jobs:
       if: always()
       with:
         path: ./output
-        name: nvidia-job-nvmf-rdma
+        name: nvidia-job-nvmf-tcp
