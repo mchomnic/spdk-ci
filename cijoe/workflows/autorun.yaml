@@ -1,0 +1,166 @@
+---
+doc: |
+  Create qemu guest, transfer SPDK .tgz source and invoke autorun
+
+  * Create qemu guest, and start it, using a system_image
+  * Transfer and unpack SPDK source to/in qemu guest
+  * Create auto.conf for testing (unittest + nvme)
+  * Invoke autorun.sh
+  * Retrieve autorun output
+  * Shut down qemu guest
+
+steps:
+- name: guest_initialize
+  uses: qemu.guest_initialize
+  with:
+    system_image_name: "{{ local.env.DISTRO }}-x86_64"
+    guest_name: generic-bios-kvm-x86_64
+
+- name: guest_start
+  uses: qemu_guest_start_custom_nvme
+  with:
+    guest_name: generic-bios-kvm-x86_64
+    nvme_setup: "{{ local.env.NVME_SETUP }}"
+
+- name: guest_check
+  run: |
+    hostname
+    uname -a
+
+- name: tgz_transfer
+  uses: core.put
+  with:
+    src: "{{ local.env.REPOSITORY_TARBALL_PATH }}"
+    dst: /tmp/spdk.tar.gz
+
+- name: abi_transfer
+  uses: core.put
+  with:
+    src: "{{ local.env.ABI_TARBALL_PATH }}"
+    dst: /tmp/spdk-abi.tar.gz
+
+- name: ci_configs_transfer
+  uses: core.put
+  with:
+    src: "{{ local.env.CI_CFGS_REPOSITORY_PATH }}"
+    dst: /opt/configs
+
+- name: tgz_unpack
+  run: |
+    mkdir -p /opt/spdk
+    tar xzf /tmp/spdk.tar.gz -C /opt/spdk
+    mkdir -p /opt/spdk-abi
+    tar xzf /tmp/spdk-abi.tar.gz -C /opt/spdk-abi
+    git config --global --add safe.directory '*'
+
+- name: output_create
+  run: |
+    mkdir -p /opt/output
+
+- name: nvme-vm-autotest
+  run: |
+    /opt/spdk/autorun.sh /opt/configs/nvme-vm-autotest.conf
+
+- name: raid-vm-autotest
+  run: |
+    /opt/spdk/autorun.sh /opt/configs/raid-vm-autotest.conf
+
+- name: ftl-vm-autotest
+  run: |
+    /opt/spdk/autorun.sh /opt/configs/ftl-vm-autotest.conf
+
+- name: bdev-vm-autotest
+  run: |
+    /opt/spdk/autorun.sh /opt/configs/bdev-vm-autotest.conf
+
+- name: nvmf-tcp-vm-autotest
+  run: |
+    /opt/spdk/autorun.sh /opt/configs/nvmf-tcp-vm-autotest.conf
+
+- name: nvmf-tcp-uring-vm-autotest
+  run: |
+    /opt/spdk/autorun.sh /opt/configs/nvmf-tcp-uring-vm-autotest.conf
+
+- name: iscsi-vm-autotest
+  run: |
+    /opt/spdk/autorun.sh /opt/configs/iscsi-vm-autotest.conf
+
+- name: iscsi-uring-vm-autotest
+  run: |
+    /opt/spdk/autorun.sh /opt/configs/iscsi-uring-vm-autotest.conf
+
+- name: freebsd-vm-autotest
+  run: |
+    ln -sfn /usr/local/bin/perl /usr/bin/perl
+    USE_INSTALLED_CONTIGMEM=yes SKIP_HUGE=yes TEST_MIN_STORAGE_SIZE=0 SYSDIR="{{ local.env.HOME }}/git/freebsd/sys" /opt/spdk/autorun.sh /opt/configs/freebsd-vm-autotest.conf
+
+- name: unittest-gcc-container-autotest
+  run: |
+    rootdir=/opt/spdk && cd $rootdir && source ./test/common/autobuild_common.sh /opt/configs/unittest-gcc-container-autotest.conf && ocf_precompile && unittest_build && ./test/unit/unittest.sh
+
+- name: unittest-clang-container-autotest
+  run: |
+    rootdir=/opt/spdk && cd $rootdir && export CC=/usr/bin/clang CXX=/usr/bin/clang++ && source ./test/common/autobuild_common.sh /opt/configs/unittest-clang-container-autotest.conf && ocf_precompile && unittest_build && ./test/unit/unittest.sh
+
+- name: unittest-valgrind-container-autotest
+  run: |
+    rootdir=/opt/spdk && cd $rootdir && source ./test/common/autobuild_common.sh /opt/configs/unittest-valgrind-container-autotest.conf && ocf_precompile && unittest_build && ./test/unit/unittest.sh
+
+- name: check-format-container-autotest
+  run: |
+    rootdir=/opt/spdk && cd $rootdir && source ./test/common/autobuild_common.sh /opt/configs/check-format-container-autotest.conf && check_format
+
+- name: release-build-gcc-container-autotest
+  run: |
+    rootdir=/opt/spdk && cd $rootdir && source ./test/common/autobuild_common.sh /opt/configs/release-build-gcc-container-autotest.conf && build_release
+
+- name: release-build-clang-container-autotest
+  run: |
+    rootdir=/opt/spdk && cd $rootdir && export CC=/usr/bin/clang CXX=/usr/bin/clang++ && source ./test/common/autobuild_common.sh /opt/configs/release-build-clang-container-autotest.conf && build_release
+
+- name: doc-container-autotest
+  run: |
+    rootdir=/opt/spdk && cd $rootdir && source ./test/common/autobuild_common.sh /opt/configs/empty.conf && build_doc
+
+- name: build-files-container-autotest
+  run: |
+    rootdir=/opt/spdk && cd $rootdir && source ./test/common/autobuild_common.sh /opt/configs/empty.conf && build_files && dpdk_pci_api
+
+- name: scan-build-container-autotest
+  run: |
+    rootdir=/opt/spdk && cd $rootdir && source ./test/common/autobuild_common.sh /opt/configs/scan-build-container-autotest.conf && ocf_precompile && scanbuild_make
+
+- name: check-so-deps-container-autotest
+  run: |
+    rootdir=/opt/spdk && cd $rootdir && source ./test/common/autobuild_common.sh /opt/configs/check-so-deps-container-autotest.conf && ocf_precompile && SPDK_ABI_DIR=/opt/spdk-abi check_so_deps
+
+- name: packaging-container-autotest
+  run: |
+    rootdir=/opt/spdk && cd $rootdir && source ./test/common/autobuild_common.sh /opt/configs/packaging-container-autotest.conf && build_packaging
+
+- name: short-fuzz-vm-autotest
+  run: |
+    /opt/spdk/autorun.sh /opt/configs/short-fuzz-vm-autotest.conf
+
+# TODO: Figure out sudo hack.
+# Sudo doesn't work spdk/spdk-ci:fedora_43 container image, resulting in PAM errors.
+# For now work around the issue by "masking" sudo and any options (e.g. -E) passed to it.
+- name: vfio-user-container-autotest
+  run: |
+    echo "export VM_IMAGE={{ local.env.GITHUB_WORKSPACE }}/fedora_43_x86_64.qcow2" >> /opt/configs/vfio-user-container-autotest.conf
+    sudo() { "${@:2}" ; } &&  export -f sudo && source /opt/configs/vfio-user-container-autotest.conf && export HUGEMEM=${HUGEMEM} && sudo -E /opt/spdk/scripts/setup.sh && /opt/spdk/autorun.sh /opt/configs/vfio-user-container-autotest.conf
+
+- name: output_listing
+  run: |
+    ls /opt
+    ls /opt/output
+
+- name: retrieve_autorun_output
+  uses: core.get
+  with:
+    src: /opt/output
+    dst: /tmp/autorun_output
+
+- name: guest_shutdown
+  run: |
+    systemctl poweroff || systemctl poweroff --force --force || true

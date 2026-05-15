@@ -1,0 +1,118 @@
+---
+name: SPDK per-patch summary
+
+on:
+  workflow_call:
+    inputs:
+      client_payload:
+        required: false
+        type: string
+        default: ''
+      result:
+        required: true
+        type: string
+        default: 'failure'
+
+jobs:
+  merge_outputs:
+    # 22.04 used on purpose; it has lcov+gcov versions that are compatible with what
+    # is used in cijoe's Fedora 40 images. Using lcov+gcov from ubuntu-latest results
+    # in warnings and/or failures.
+    # ARM is used on purpose; it has separate queue, so those jobs can start immeditely
+    # and the billing is exactly the same as x86 ubuntu runner (unlike macos or windows) so penalty is zero
+    runs-on: ubuntu-22.04-arm
+    steps:
+    - name: Download the SPDK repository
+      uses: actions/download-artifact@v8.0.1
+      with:
+        name: repo-spdk
+        path: ./spdk
+
+    - name: Download artifact tarballs
+      uses: actions/download-artifact@v8.0.1
+      with:
+        pattern: '*-job-*'
+        path: ./_autorun_summary
+
+    - name: Untar the SPDK repo
+      run: tar xf ./spdk/spdk.tar.gz -C ./spdk
+
+    - name: Leave traces of the test run in the artifacts
+      run: |
+        summary="./_autorun_summary/github_run_summary"
+        echo "SPDK: $(git -C ./spdk show --pretty=format:"%H %s" -s HEAD)" > $summary
+        echo "SPDK-CI: ${{ github.sha }}" >> $summary
+        echo "GitHub run-id: ${{ github.run_id }}" >> $summary
+        cat "$summary" >> $GITHUB_STEP_SUMMARY
+
+    - name: Post process artifacts from jobs
+      id: autorun_post
+      working-directory: spdk
+      run: |
+        # TODO: either use an official lcov image or create our own
+        # TODO: get rid of pandas dependency in spdk/autorun_post.py.
+        #       It's ~1GB with all it's dependecies, which is an overkill for
+        #       a few table operations.
+        sudo apt-get update && sudo apt-get install -y lcov python3-pandas python3-tabulate
+        # This step is needed for auto code generation of the header file `include/spdk_internal/rpc_autogen.h`
+        ./configure --without-nvme-cuse
+        make -C include jsonrpc
+        # Now can run post processing
+        ./scripts/autorun_post.py -d ../_autorun_summary -r ./
+        echo "result=success" >> "$GITHUB_OUTPUT"
+
+    - name: Upload artifacts
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v7.0.0
+      with:
+        name: _autorun_summary
+        path: _autorun_summary
+    outputs:
+      result: ${{ steps.autorun_post.outputs.result }}
+
+  report:
+    if: ${{ always() }}
+    # ubuntu-22.04-arm is used on purpose; it has separate queue, so those jobs can start immeditely
+    # and the billing is exactly the same as x86 ubuntu runner (unlike macos or windows) so penalty is zero
+    runs-on: ubuntu-22.04-arm
+    needs: merge_outputs
+    steps:
+    - name: Vote count from workflows
+      id: vote_count
+      run: |
+        vote="-1"
+        message="Build failed. "
+
+        # Combine results from jobs and autorun_post.py
+        if [[ "${{ inputs.result }}" == "success" && \
+                "${{ needs.merge_outputs.outputs.result }}" == "success" ]]; then
+            vote="1"
+            message="Build successful. "
+        fi
+
+        message+="Results: [${{ github.run_id }}/${{ github.run_attempt }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }})"
+        echo "vote=$vote" >> $GITHUB_OUTPUT
+        echo "message=$message" >> $GITHUB_OUTPUT
+        echo "$message" >> $GITHUB_STEP_SUMMARY
+
+    - name: Report results
+      # Only run if it was triggered by Gerrit event, with JSON for it
+      if: ${{ inputs.client_payload != '' && fromJson(inputs.client_payload) != '' || false }}
+      run: |
+        set -e
+
+        change_num="${{ fromJson(inputs.client_payload).change.number }}"
+        patch_set="${{ fromJson(inputs.client_payload).patchSet.number }}"
+
+        patch_set_date="${{ fromJson(inputs.client_payload).patchSet.createdOn }}"
+        current_date="$(date +%s)"
+        patch_set_turnaround="$(date -d@"$(($current_date - $patch_set_date))" -u +%Hh:%Mm:%Ss)"
+
+        message="${{ steps.vote_count.outputs.message }}"
+        message+="\nTests finished in $patch_set_turnaround after patch set submission."
+
+        curl -L -X POST https://review.spdk.io/a/changes/$change_num/revisions/$patch_set/review \
+        --user "${{ secrets.GERRIT_BOT_USER }}:${{ secrets.GERRIT_BOT_HTTP_PASSWD }}" \
+        --header "Content-Type: application/json" \
+        --data "{'message': '$message', 'labels': {'Verified': ${{ steps.vote_count.outputs.vote }}}}" \
+        --fail-with-body

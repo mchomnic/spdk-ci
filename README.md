@@ -1,5 +1,8 @@
 # SPDK Continuous Integration
 
+[![SPDK-CI build VM image](https://github.com/spdk/spdk-ci/actions/workflows/build_qcow2.yml/badge.svg)](https://github.com/spdk/spdk-ci/actions/workflows/build_qcow2.yml)
+[![SPDK per-patch tests](https://github.com/spdk/spdk-ci/actions/workflows/gerrit-webhook-handler.yml/badge.svg)](https://github.com/spdk/spdk-ci/actions/workflows/gerrit-webhook-handler.yml)
+
 **DISCLAIMER: This repository is an area of very active development.
 Outdated documentation and breaking changes might occur.**
 
@@ -79,6 +82,12 @@ run all common tests
 
 ```bash
  $ gh act --job tests --secret GITHUB_TOKEN=$(gh auth token) workflow_dispatch
+```
+
+run a workflow using repository_dispatch event (example events provided in `.github/example_events`)
+
+```bash
+ $ gh act --job parse_comment --secret GITHUB_TOKEN=$(gh auth token) -e .github/example_events/comment-added.json repository_dispatch
 ```
 
 for more examples, visit <https://nektosact.com/>

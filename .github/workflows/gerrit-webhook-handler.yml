@@ -1,21 +1,103 @@
 ---
 name: SPDK per-patch tests
 
+# Pull request - "SPDK-CI: PR#123: Example Title"
+# Workflow dispatch - "Manual: (12345/5)Example Gerrit Subject"
+# Repository dispatch - "(12345/5)Example Gerrit Subject"
+run-name: >-
+  ${{
+    github.event_name == 'pull_request' && format('SPDK-CI: PR#{0}: {1}',
+       github.event.pull_request.number, github.event.pull_request.title)
+    || github.event_name == 'workflow_dispatch' && inputs.client_payload != '' && format('Manual: ({0}/{1}){2}',
+       fromJson(inputs.client_payload).change.number, fromJson(inputs.client_payload).patchSet.number, fromJson(inputs.client_payload).change.subject)
+    || github.event_name == 'workflow_dispatch' && inputs.client_payload == '' && format('Manual: SPDK master')
+    || github.event_name == 'repository_dispatch' && github.event.client_payload != '' && format('({0}/{1}){2}',
+       github.event.client_payload.change.number, github.event.client_payload.patchSet.number, github.event.client_payload.change.subject)
+    || format('SPDK per-patch')
+  }}
+
 on:
   pull_request:
     paths-ignore:
     - '.github/workflows/selftest.yml'
     - '.github/workflows/build_qcow2.yml'
+    - 'infra/**'
   workflow_dispatch:
+    inputs:
+      client_payload:
+        required: false
+        type: string
+        default: ''
   repository_dispatch:
     types:
     - per-patch-event
+    - patchset-created
+    - wip-state-changed
+    - private-state-changed
+
+# env:
+#   # TODO: Renable client_payload for workflow_dispatch
+#   # Workaround for https://github.com/actions/runner/issues/2372
+#   client_payload: ${{ github.event.client_payload != '' && toJson(github.event.client_payload) || '' }}
 
 jobs:
-  common-tests:
+
+  patch_set_status:
+    name: Verify patch set state
+    runs-on: ubuntu-latest
+    if: github.event.client_payload != ''
+    outputs:
+      changed_files: ${{ steps.patch.outputs.changed_files }}
+      client_payload: ${{ env.client_payload }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      client_payload: ${{ github.event.client_payload != '' && toJson(github.event.client_payload) || '' }}
+    steps:
+    - uses: actions/checkout@v6
+    - name: Check patch set status
+      id: patch
+      env:
+        CHANGE_NUM: ${{ fromJSON(env.client_payload).change.number }}
+        PATCH_SET: ${{ fromJSON(env.client_payload).patchSet.number }}
+        TITLE: ${{ fromJSON(env.client_payload).change.subject }}
+        GERRIT_BOT_USER: ${{ secrets.GERRIT_BOT_USER }}
+      run: .github/scripts/parse_gerrit_webhook.sh
+
+  common:
+    name: Common tests
+    if: ${{ !cancelled() }}
+    needs:
+    - patch_set_status
     uses: ./.github/workflows/spdk-common-tests.yml
     with:
       # "Client payload" is all of the information Gerrit webhooks sends out.
-      client_payload: ${{ toJson(github.event.client_payload) }}
-    secrets: inherit
+      client_payload: ${{ needs.patch_set_status.outputs.client_payload }}
+      changed_files: ${{ needs.patch_set_status.outputs.changed_files }}
+      force_pkgdep: ${{ github.event_name == 'pull_request' }}
+
+  hpe:
+    name: NVMe-oF RDMA tests
+    if: ${{ !cancelled() && github.repository == 'spdk/spdk-ci' }}
+    needs:
+    - patch_set_status
+    uses: ./.github/workflows/nvmf-rdma.yml
+    with:
+      client_payload: ${{ needs.patch_set_status.outputs.client_payload }}
   # Add more jobs below if needed.
+
+
+  # Summary should be last job, please make sure to include yours in 'needs'.
+  summary:
+    name: Job summary
+    if: ${{ !cancelled() }}
+    needs:
+    - patch_set_status
+    - common
+    - hpe
+    uses: ./.github/workflows/summary.yml
+    with:
+      client_payload: ${{ needs.patch_set_status.outputs.client_payload }}
+      result: >-
+        ${{ (needs.common.result == 'success' && (needs.hpe.result == 'success' || needs.hpe.result == 'skipped')) &&
+        'success' || 'failure' }}
+    secrets: inherit
