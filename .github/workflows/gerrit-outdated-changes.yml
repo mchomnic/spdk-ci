@@ -3,8 +3,6 @@ name: Gerrit outdated changes scan
 
 on:
   workflow_dispatch:
-  schedule:
-  - cron: "0 0 * * *"    # Every 24 hours at midnight UTC
 
 jobs:
   outdated-changes-scan:
