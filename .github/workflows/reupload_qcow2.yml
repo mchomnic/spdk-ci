@@ -27,6 +27,7 @@ jobs:
         distro:
         - fedora_43
         - freebsd_14
+        - ubuntu_24
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:

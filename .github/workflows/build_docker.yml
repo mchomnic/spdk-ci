@@ -20,7 +20,7 @@
 #
 # By relying on CIJOE for the majority of the logic, this approach:
 #
-# - Simplifies testing and development, as the logic can be run locally 
+# - Simplifies testing and development, as the logic can be run locally
 #   (e.g., in a lab or on a workstation/laptop).
 # - Enables reusability in other CI/CD pipelines, such as GitLab.
 #
@@ -46,6 +46,7 @@ on:
         options:
         - fedora_43
         - freebsd_14
+        - ubuntu_24
         default: 'fedora_43'
 
 jobs:
